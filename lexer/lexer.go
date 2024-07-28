@@ -86,14 +86,14 @@ func (lexer *Lexer) NextToken() token.Token {
 	return tok
 }
 
-func (l *Lexer) readChar() {
-	if l.readPosition >= len(l.input) {
-		l.char = 0 // NULL character
+func (lexer *Lexer) readChar() {
+	if lexer.readPosition >= len(lexer.input) {
+		lexer.char = 0 // NULL character
 	} else {
-		l.char = l.input[l.readPosition]
+		lexer.char = lexer.input[lexer.readPosition]
 	}
-	l.position = l.readPosition
-	l.readPosition += 1
+	lexer.position = lexer.readPosition
+	lexer.readPosition += 1
 }
 
 func (lexer *Lexer) readIdentifier() string {
@@ -126,7 +126,7 @@ func (lexer *Lexer) peekChar() byte {
 	}
 }
 
-func newToken(tokenType token.TokenType, char byte) token.Token {
+func newToken(tokenType token.Type, char byte) token.Token {
 	return token.Token{Type: tokenType, Literal: string(char)}
 }
 
