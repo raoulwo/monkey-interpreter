@@ -5,6 +5,7 @@ import (
 	"monkey/ast"
 	"monkey/lexer"
 	"monkey/token"
+	"strconv"
 )
 
 const (
@@ -39,6 +40,7 @@ func New(l *lexer.Lexer) *Parser {
 
 	parser.prefixParseFns = make(map[token.Type]prefixParseFn)
 	parser.registerPrefix(token.IDENT, parser.parseIdentifier)
+	parser.registerPrefix(token.INT, parser.parseIntegerLiteral)
 
 	parser.nextToken()
 	parser.nextToken()
@@ -170,4 +172,18 @@ func (parser *Parser) parseExpression(precedence int) ast.Expression {
 
 func (parser *Parser) parseIdentifier() ast.Expression {
 	return &ast.Identifier{Token: parser.currToken, Value: parser.currToken.Literal}
+}
+
+func (parser *Parser) parseIntegerLiteral() ast.Expression {
+	literal := &ast.IntegerLiteral{Token: parser.currToken}
+
+	value, err := strconv.ParseInt(parser.currToken.Literal, 0, 64)
+	if err != nil {
+		message := fmt.Sprintf("could not parse %q as integer", parser.currToken.Literal)
+		parser.errors = append(parser.errors, message)
+		return nil
+	}
+	literal.Value = value
+
+	return literal
 }
