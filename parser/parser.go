@@ -7,111 +7,167 @@ import (
 	"monkey/token"
 )
 
+const (
+	_ int = iota
+	LOWEST
+	EQUALS
+	LESSGREATER
+	SUM
+	PRODUCT
+	PREFIX
+	CALL
+)
+
 type Parser struct {
-	l *lexer.Lexer
+	l      *lexer.Lexer
+	errors []string
 
 	currToken token.Token
 	peekToken token.Token
-	errors    []string
+
+	prefixParseFns map[token.Type]prefixParseFn
+	infixParseFns  map[token.Type]infixParseFn
 }
+
+type (
+	prefixParseFn func() ast.Expression
+	infixParseFn  func(ast.Expression) ast.Expression
+)
 
 func New(l *lexer.Lexer) *Parser {
-	p := &Parser{l: l, errors: []string{}}
+	parser := &Parser{l: l, errors: []string{}}
 
-	p.nextToken()
-	p.nextToken()
+	parser.prefixParseFns = make(map[token.Type]prefixParseFn)
+	parser.registerPrefix(token.IDENT, parser.parseIdentifier)
 
-	return p
+	parser.nextToken()
+	parser.nextToken()
+
+	return parser
 }
 
-func (p *Parser) Errors() []string {
-	return p.errors
+func (parser *Parser) registerPrefix(tokenType token.Type, fn prefixParseFn) {
+	parser.prefixParseFns[tokenType] = fn
 }
 
-func (p *Parser) peekError(tokenType token.Type) {
-	message := fmt.Sprintf("expected next token to be %s, got %s instead", tokenType, p.peekToken.Type)
-	p.errors = append(p.errors, message)
+func (parser *Parser) registerInfix(tokenType token.Type, fn infixParseFn) {
+	parser.infixParseFns[tokenType] = fn
 }
 
-func (p *Parser) nextToken() {
-	p.currToken = p.peekToken
-	p.peekToken = p.l.NextToken()
+func (parser *Parser) Errors() []string {
+	return parser.errors
 }
 
-func (p *Parser) ParseProgram() *ast.Program {
+func (parser *Parser) peekError(tokenType token.Type) {
+	message := fmt.Sprintf("expected next token to be %s, got %s instead", tokenType, parser.peekToken.Type)
+	parser.errors = append(parser.errors, message)
+}
+
+func (parser *Parser) nextToken() {
+	parser.currToken = parser.peekToken
+	parser.peekToken = parser.l.NextToken()
+}
+
+func (parser *Parser) ParseProgram() *ast.Program {
 	program := &ast.Program{}
 	program.Statements = []ast.Statement{}
 
-	for !p.currTokenIs(token.EOF) {
-		statement := p.parseStatement()
+	for !parser.currTokenIs(token.EOF) {
+		statement := parser.parseStatement()
 		if statement != nil {
 			program.Statements = append(program.Statements, statement)
 		}
-		p.nextToken()
+		parser.nextToken()
 	}
 
 	return program
 }
 
-func (p *Parser) parseStatement() ast.Statement {
-	switch p.currToken.Type {
+func (parser *Parser) parseStatement() ast.Statement {
+	switch parser.currToken.Type {
 	case token.LET:
-		return p.parseLetStatement()
+		return parser.parseLetStatement()
 	case token.RETURN:
-		return p.parseReturnStatement()
+		return parser.parseReturnStatement()
 	default:
-		return nil
+		return parser.parseExpressionStatement()
 	}
 }
 
-func (p *Parser) parseLetStatement() *ast.LetStatement {
-	statement := &ast.LetStatement{Token: p.currToken}
+func (parser *Parser) parseLetStatement() *ast.LetStatement {
+	statement := &ast.LetStatement{Token: parser.currToken}
 
-	if !p.expectPeek(token.IDENT) {
+	if !parser.expectPeek(token.IDENT) {
 		return nil
 	}
 
-	statement.Name = &ast.Identifier{Token: p.currToken, Value: p.currToken.Literal}
+	statement.Name = &ast.Identifier{Token: parser.currToken, Value: parser.currToken.Literal}
 
-	if !p.expectPeek(token.ASSIGN) {
+	if !parser.expectPeek(token.ASSIGN) {
 		return nil
 	}
 
 	// TODO: For now, we're skipping expressions until we encounter a semicolon
-	for !p.currTokenIs(token.SEMICOLON) {
-		p.nextToken()
+	for !parser.currTokenIs(token.SEMICOLON) {
+		parser.nextToken()
 	}
 
 	return statement
 }
 
-func (p *Parser) expectPeek(tokenType token.Type) bool {
-	if p.peekTokenIs(tokenType) {
-		p.nextToken()
+func (parser *Parser) expectPeek(tokenType token.Type) bool {
+	if parser.peekTokenIs(tokenType) {
+		parser.nextToken()
 		return true
 	} else {
-		p.peekError(tokenType)
+		parser.peekError(tokenType)
 		return false
 	}
 }
 
-func (p *Parser) currTokenIs(tokenType token.Type) bool {
-	return p.currToken.Type == tokenType
+func (parser *Parser) currTokenIs(tokenType token.Type) bool {
+	return parser.currToken.Type == tokenType
 }
 
-func (p *Parser) peekTokenIs(tokenType token.Type) bool {
-	return p.peekToken.Type == tokenType
+func (parser *Parser) peekTokenIs(tokenType token.Type) bool {
+	return parser.peekToken.Type == tokenType
 }
 
-func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
-	statement := &ast.ReturnStatement{Token: p.currToken}
+func (parser *Parser) parseReturnStatement() *ast.ReturnStatement {
+	statement := &ast.ReturnStatement{Token: parser.currToken}
 
-	p.nextToken()
+	parser.nextToken()
 
 	// TODO: For now, we're skipping expressions until we encounter a semicolon
-	for !p.currTokenIs(token.SEMICOLON) {
-		p.nextToken()
+	for !parser.currTokenIs(token.SEMICOLON) {
+		parser.nextToken()
 	}
 
 	return statement
+}
+
+func (parser *Parser) parseExpressionStatement() *ast.ExpressionStatement {
+	statement := &ast.ExpressionStatement{Token: parser.currToken}
+
+	statement.Expression = parser.parseExpression(LOWEST)
+
+	if parser.peekTokenIs(token.SEMICOLON) {
+		parser.nextToken()
+	}
+
+	return statement
+}
+
+func (parser *Parser) parseExpression(precedence int) ast.Expression {
+	prefixFn := parser.prefixParseFns[parser.currToken.Type]
+	if prefixFn == nil {
+		return nil
+	}
+	leftExp := prefixFn()
+
+	return leftExp
+}
+
+func (parser *Parser) parseIdentifier() ast.Expression {
+	return &ast.Identifier{Token: parser.currToken, Value: parser.currToken.Literal}
 }
