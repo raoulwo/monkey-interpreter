@@ -11,11 +11,11 @@ func TestLetStatements(t *testing.T) {
 	tests := []struct {
 		input              string
 		expectedIdentifier string
-		expectedValue      int64
+		expectedValue      interface{}
 	}{
 		{"let x = 5;", "x", 5},
-		{"let y = 8;", "y", 8},
-		{"let foobar = 2;", "foobar", 2},
+		{"let y = true;", "y", true},
+		{"let foobar = y;", "foobar", "y"},
 	}
 
 	for _, test := range tests {
@@ -33,17 +33,22 @@ func TestLetStatements(t *testing.T) {
 		if !testLetStatement(t, statement, test.expectedIdentifier) {
 			return
 		}
+
+		value := statement.(*ast.LetStatement).Value
+		if !testLiteralExpression(t, value, test.expectedValue) {
+			return
+		}
 	}
 }
 
 func TestReturnStatements(t *testing.T) {
 	tests := []struct {
 		input         string
-		expectedValue int64
+		expectedValue interface{}
 	}{
 		{"return 5;", 5},
-		{"return 8;", 8},
-		{"return 0;", 0},
+		{"return true;", true},
+		{"return foobar;", "foobar"},
 	}
 	for _, test := range tests {
 		l := lexer.New(test.input)
@@ -65,6 +70,10 @@ func TestReturnStatements(t *testing.T) {
 
 		if returnStatement.TokenLiteral() != "return" {
 			t.Errorf("returnStatement.TokenLiteral not 'return'. got=%q", returnStatement.TokenLiteral())
+		}
+
+		if !testLiteralExpression(t, returnStatement.ReturnValue, test.expectedValue) {
+			return
 		}
 	}
 }
