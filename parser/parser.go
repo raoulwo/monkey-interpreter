@@ -54,6 +54,8 @@ func New(l *lexer.Lexer) *Parser {
 	parser.registerPrefix(token.INT, parser.parseIntegerLiteral)
 	parser.registerPrefix(token.BANG, parser.parsePrefixExpression)
 	parser.registerPrefix(token.MINUS, parser.parsePrefixExpression)
+	parser.registerPrefix(token.TRUE, parser.parseBoolean)
+	parser.registerPrefix(token.FALSE, parser.parseBoolean)
 
 	parser.infixParseFns = make(map[token.Type]infixParseFn)
 	parser.registerInfix(token.PLUS, parser.parseInfixExpression)
@@ -88,6 +90,11 @@ func (parser *Parser) peekError(tokenType token.Type) {
 	parser.errors = append(parser.errors, message)
 }
 
+func (parser *Parser) noPrefixParseFnError(tokenType token.Type) {
+	message := fmt.Sprintf("no prefix parse function for %s found", tokenType)
+	parser.errors = append(parser.errors, message)
+}
+
 func (parser *Parser) currPrecedence() int {
 	if precedence, ok := precedences[parser.currToken.Type]; ok {
 		return precedence
@@ -105,6 +112,24 @@ func (parser *Parser) peekPrecedence() int {
 func (parser *Parser) nextToken() {
 	parser.currToken = parser.peekToken
 	parser.peekToken = parser.l.NextToken()
+}
+
+func (parser *Parser) expectPeek(tokenType token.Type) bool {
+	if parser.peekTokenIs(tokenType) {
+		parser.nextToken()
+		return true
+	} else {
+		parser.peekError(tokenType)
+		return false
+	}
+}
+
+func (parser *Parser) currTokenIs(tokenType token.Type) bool {
+	return parser.currToken.Type == tokenType
+}
+
+func (parser *Parser) peekTokenIs(tokenType token.Type) bool {
+	return parser.peekToken.Type == tokenType
 }
 
 func (parser *Parser) ParseProgram() *ast.Program {
@@ -154,24 +179,6 @@ func (parser *Parser) parseLetStatement() *ast.LetStatement {
 	return statement
 }
 
-func (parser *Parser) expectPeek(tokenType token.Type) bool {
-	if parser.peekTokenIs(tokenType) {
-		parser.nextToken()
-		return true
-	} else {
-		parser.peekError(tokenType)
-		return false
-	}
-}
-
-func (parser *Parser) currTokenIs(tokenType token.Type) bool {
-	return parser.currToken.Type == tokenType
-}
-
-func (parser *Parser) peekTokenIs(tokenType token.Type) bool {
-	return parser.peekToken.Type == tokenType
-}
-
 func (parser *Parser) parseReturnStatement() *ast.ReturnStatement {
 	statement := &ast.ReturnStatement{Token: parser.currToken}
 
@@ -219,29 +226,6 @@ func (parser *Parser) parseExpression(precedence int) ast.Expression {
 	return leftExp
 }
 
-func (parser *Parser) noPrefixParseFnError(tokenType token.Type) {
-	message := fmt.Sprintf("no prefix parse function for %s found", tokenType)
-	parser.errors = append(parser.errors, message)
-}
-
-func (parser *Parser) parseIdentifier() ast.Expression {
-	return &ast.Identifier{Token: parser.currToken, Value: parser.currToken.Literal}
-}
-
-func (parser *Parser) parseIntegerLiteral() ast.Expression {
-	literal := &ast.IntegerLiteral{Token: parser.currToken}
-
-	value, err := strconv.ParseInt(parser.currToken.Literal, 0, 64)
-	if err != nil {
-		message := fmt.Sprintf("could not parse %q as integer", parser.currToken.Literal)
-		parser.errors = append(parser.errors, message)
-		return nil
-	}
-	literal.Value = value
-
-	return literal
-}
-
 func (parser *Parser) parsePrefixExpression() ast.Expression {
 	expression := &ast.PrefixExpression{
 		Token:    parser.currToken,
@@ -267,4 +251,26 @@ func (parser *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
 	expression.Right = parser.parseExpression(precedence)
 
 	return expression
+}
+
+func (parser *Parser) parseIdentifier() ast.Expression {
+	return &ast.Identifier{Token: parser.currToken, Value: parser.currToken.Literal}
+}
+
+func (parser *Parser) parseIntegerLiteral() ast.Expression {
+	literal := &ast.IntegerLiteral{Token: parser.currToken}
+
+	value, err := strconv.ParseInt(parser.currToken.Literal, 0, 64)
+	if err != nil {
+		message := fmt.Sprintf("could not parse %q as integer", parser.currToken.Literal)
+		parser.errors = append(parser.errors, message)
+		return nil
+	}
+	literal.Value = value
+
+	return literal
+}
+
+func (parser *Parser) parseBoolean() ast.Expression {
+	return &ast.Boolean{Token: parser.currToken, Value: parser.currTokenIs(token.TRUE)}
 }
